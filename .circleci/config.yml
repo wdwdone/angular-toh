@@ -1,0 +1,72 @@
+version: 2.1
+
+jobs:
+  build-prod:
+    docker:
+      - image: cimg/node:18.20.0-browsers
+    steps:
+      - checkout 
+      - restore-cache:
+          keys: npm-cache-{{ checksum "package-lock.json"}}
+      - run:
+          name: Installation Dependencies
+          command: npm install 
+      - save-cache:
+          paths:
+            - ~/.npm
+          key: npm-cache-{{ checksum "package-lock.json"}}
+      - run:
+          name: Build the app
+          command: npm run build-prod
+      - run:
+          name: Install Chromeheadless
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y libappindicator1 fonts-liberation libu2f-udev libvulkan1
+            wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+            sudo dpkg -i google-chrome-stable_current_amd64.deb
+            sudo apt-get install -f
+      - run:
+          name: Run test cases
+          command: npm run test:headless
+      - store_test_results:
+          path: test-results
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - dist
+            - node_modules
+      - run:
+          name: Install AWS CLI
+          command: |
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./awz/install
+            #rm -rf awscliv2.zip aws
+
+      - run:
+          name: Deploy to s3
+          command: |
+            DIST_OUTPUT_DIR==$(find dist -maxdepth 1 -type d | awk "NR==2")
+            aws s3 sync ${DIST_OUTPUT_DIR}/browser/ s3://$s3_BUCKET_NAME --delete
+
+
+workflows:
+  version: 2
+  build_test_deploy:
+    jobs:
+      # - test 
+      - build-prod:
+          # requires:
+          #   - test
+          filters:
+            branches:
+              only:
+                - main
+                - master
+              
+
+
+
+
+
